@@ -1,0 +1,21 @@
+services:
+  db:
+    environment:
+      POSTGRES_DB: test_delivery
+    ports: !reset []
+
+  migrate:
+    profiles: ["disabled"]
+
+  api:
+    profiles: ["disabled"]
+
+  tests:
+    build:
+      context: .
+      target: test
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db/test_delivery
+    depends_on:
+      db:
+        condition: service_healthy
