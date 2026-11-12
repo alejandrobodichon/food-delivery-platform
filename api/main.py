@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import engine, get_db
 from core.error_handlers import register_exception_handlers
-from routers import auth, users
+from routers import auth, restaurants, users
 
 
 @asynccontextmanager
@@ -23,6 +23,7 @@ register_exception_handlers(app)
 
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(restaurants.router, prefix="/restaurants", tags=["restaurants"])
 
 
 @app.get("/health")

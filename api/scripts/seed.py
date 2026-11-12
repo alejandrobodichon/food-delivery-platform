@@ -69,32 +69,32 @@ CATALOG: list[tuple[str, bool, list[tuple[str, int, bool]]]] = [
 
 
 async def seed(session: AsyncSession) -> None:
-    for restaurant_name, is_open, dishes in CATALOG:
-        # ponytail: restaurant names aren't unique in the schema, the seed owns these names
-        restaurant_id = await session.scalar(
-            select(Restaurant.id).where(Restaurant.name == restaurant_name)
-        )
-        if restaurant_id is None:
-            restaurant = Restaurant(name=restaurant_name, is_open=is_open)
-            session.add(restaurant)
-            await session.flush()
-            restaurant_id = restaurant.id
+    await session.execute(
+        insert(Restaurant)
+        .values([{"name": name, "is_open": is_open} for name, is_open, _ in CATALOG])
+        .on_conflict_do_nothing(constraint="uq_restaurants_name")
+    )
+    # ON CONFLICT DO NOTHING returns no row for existing names, so read the ids back.
+    ids_by_name = dict(
+        (await session.execute(select(Restaurant.name, Restaurant.id))).tuples().all()
+    )
 
-        await session.execute(
-            insert(Dish)
-            .values(
-                [
-                    {
-                        "restaurant_id": restaurant_id,
-                        "name": name,
-                        "price_cents": price_cents,
-                        "is_available": is_available,
-                    }
-                    for name, price_cents, is_available in dishes
-                ]
-            )
-            .on_conflict_do_nothing(constraint="uq_dishes_restaurant_id_name")
+    await session.execute(
+        insert(Dish)
+        .values(
+            [
+                {
+                    "restaurant_id": ids_by_name[restaurant_name],
+                    "name": name,
+                    "price_cents": price_cents,
+                    "is_available": is_available,
+                }
+                for restaurant_name, _, dishes in CATALOG
+                for name, price_cents, is_available in dishes
+            ]
         )
+        .on_conflict_do_nothing(constraint="uq_dishes_restaurant_id_name")
+    )
 
 
 async def main() -> None:

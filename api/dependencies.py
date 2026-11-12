@@ -8,8 +8,10 @@ from core.auth import verify_access_token
 from core.database import get_db
 from core.exceptions import NotAuthenticated
 from models.user import User
+from repositories.restaurant_repository import RestaurantRepository
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthService
+from services.restaurant_service import RestaurantService
 from services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -26,6 +28,19 @@ def get_user_service(
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+
+
+def get_restaurant_repository(db: Annotated[AsyncSession, Depends(get_db)]) -> RestaurantRepository:
+    return RestaurantRepository(db)
+
+
+def get_restaurant_service(
+    repo: Annotated[RestaurantRepository, Depends(get_restaurant_repository)],
+) -> RestaurantService:
+    return RestaurantService(repo)
+
+
+RestaurantServiceDep = Annotated[RestaurantService, Depends(get_restaurant_service)]
 
 
 def get_auth_service(

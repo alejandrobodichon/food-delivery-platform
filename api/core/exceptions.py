@@ -54,3 +54,7 @@ class InvalidCredentials(UnauthorizedError):
 
 class NotAuthenticated(UnauthorizedError):
     message = "Could not validate credentials."
+
+
+class RestaurantNotFound(NotFoundError):
+    message = "Restaurant not found."
