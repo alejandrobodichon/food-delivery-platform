@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import AsyncSessionLocal, engine
+from core.database import AsyncSessionLocal, engine, transaction
 from models.dish import Dish
 from models.restaurant import Restaurant
 
@@ -98,9 +98,8 @@ async def seed(session: AsyncSession) -> None:
 
 
 async def main() -> None:
-    async with AsyncSessionLocal() as session:
+    async with transaction(AsyncSessionLocal) as session:
         await seed(session)
-        await session.commit()
     await engine.dispose()
 
 
