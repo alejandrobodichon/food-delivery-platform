@@ -251,3 +251,14 @@ async def test_other_user_can_still_log_in_after_forbidden_delete(
     response = await client.get("/users/me", headers=other_headers)
 
     assert response.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_response_model_does_not_leak_password_hash(client: AsyncClient):
+    user = await create_test_user(client)
+
+    response = await client.get(f"/users/{user['id']}")
+
+    body = response.json()
+    assert "password_hash" not in body
+    assert set(body) == {"id", "username", "email"}

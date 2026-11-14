@@ -24,6 +24,13 @@ class UnauthorizedError(AppError): ...
 class UnprocessableError(AppError): ...
 
 
+class ServiceUnavailableError(AppError): ...
+
+
+class DatabaseUnavailable(ServiceUnavailableError):
+    message = "Database unavailable."
+
+
 class InternalError(AppError):
     message = "An internal error occurred."
 

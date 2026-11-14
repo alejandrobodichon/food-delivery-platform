@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Protocol
 
@@ -11,9 +11,11 @@ engine = create_async_engine(settings.database_url)
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+
 class Transactional(Protocol):
     async def commit(self) -> None: ...
     async def rollback(self) -> None: ...
+
 
 @asynccontextmanager
 async def transaction[S: Transactional](
@@ -35,4 +37,3 @@ class Base(DeclarativeBase):
 async def get_db() -> AsyncGenerator[AsyncSession]:
     async with transaction(AsyncSessionLocal) as session:
         yield session
-

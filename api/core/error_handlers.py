@@ -8,6 +8,7 @@ from core.exceptions import (
     ForbiddenError,
     InternalError,
     NotFoundError,
+    ServiceUnavailableError,
     UnauthorizedError,
     UnprocessableError,
 )
@@ -33,4 +34,5 @@ STATUS_BY_ERROR: dict[type[AppError], int] = {
     UnprocessableError: 422,
     UnauthorizedError: 401,
     InternalError: 500,
+    ServiceUnavailableError: 503,
 }

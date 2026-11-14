@@ -1,10 +1,17 @@
 import os
 from collections.abc import AsyncGenerator
 
+from sqlalchemy.engine import make_url
+
 os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost/test_delivery"
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-at-least-32-bytes-long")
+
+_db_name = make_url(os.environ["DATABASE_URL"]).database or ""
+if not _db_name.startswith("test_"):  # NEW
+    raise RuntimeError(f"Refusing to run tests against non-test database {_db_name!r}")
+
 
 import pytest
 from httpx import ASGITransport, AsyncClient
