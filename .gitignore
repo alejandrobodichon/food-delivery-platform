@@ -27,6 +27,7 @@ media/profile_pics/*
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.lcov
 htmlcov/
 
 # macOS / IDE
