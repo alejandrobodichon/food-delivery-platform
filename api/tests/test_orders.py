@@ -1,55 +1,11 @@
-from dataclasses import dataclass
-
 import pytest
 from httpx import AsyncClient, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.dish import Dish
 from models.order import Order
 from models.restaurant import Restaurant
-from scripts.seed import seed
-from tests.conftest import create_test_user, login
-
-
-@dataclass(frozen=True)
-class Catalog:
-    """Ids of the seeded catalog, looked up by name.
-
-    Ids are never hard-coded: rolled-back tests don't reset Postgres sequences, so the same
-    restaurant gets a different id depending on which tests ran before.
-    """
-
-    restaurant_ids: dict[str, int]
-    dish_ids: dict[tuple[str, str], int]
-    dish_prices: dict[tuple[str, str], int]
-
-    def restaurant(self, name: str) -> int:
-        return self.restaurant_ids[name]
-
-    def dish(self, restaurant: str, dish: str) -> int:
-        return self.dish_ids[(restaurant, dish)]
-
-    def price(self, restaurant: str, dish: str) -> int:
-        return self.dish_prices[(restaurant, dish)]
-
-
-@pytest.fixture
-async def catalog(db_session: AsyncSession) -> Catalog:
-    await seed(db_session)
-    rows = await db_session.execute(
-        select(Restaurant.name, Dish.name, Dish.id, Dish.price_cents, Restaurant.id).join(
-            Restaurant, Dish.restaurant_id == Restaurant.id
-        )
-    )
-    restaurant_ids: dict[str, int] = {}
-    dish_ids: dict[tuple[str, str], int] = {}
-    dish_prices: dict[tuple[str, str], int] = {}
-    for restaurant_name, dish_name, dish_id, price_cents, restaurant_id in rows:
-        restaurant_ids[restaurant_name] = restaurant_id
-        dish_ids[(restaurant_name, dish_name)] = dish_id
-        dish_prices[(restaurant_name, dish_name)] = price_cents
-    return Catalog(restaurant_ids, dish_ids, dish_prices)
+from tests.conftest import Catalog, create_test_user, login
 
 
 async def place_order(
@@ -72,7 +28,6 @@ async def place_order(
 
 async def count_orders(db_session: AsyncSession) -> int:
     return await db_session.scalar(select(func.count()).select_from(Order)) or 0
-
 
 
 @pytest.mark.anyio
@@ -235,7 +190,6 @@ async def test_rejected_order_is_not_saved(
     assert await count_orders(db_session) == 0
 
 
-
 @pytest.mark.anyio
 async def test_same_idempotency_key_returns_same_order(
     client: AsyncClient, auth_headers: dict, catalog: Catalog, db_session: AsyncSession
@@ -300,8 +254,6 @@ async def test_retry_returns_original_order_even_if_restaurant_closed_since(
 
     assert retry.status_code == 201
     assert retry.json()["id"] == first.json()["id"]
-
-
 
 
 @pytest.mark.anyio

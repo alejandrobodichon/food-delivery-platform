@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -112,3 +112,22 @@ class OrderRepository:
         if order is None:
             return None
         return await self._with_items(order)
+
+    @timed
+    @translate_db_errors
+    async def get_by_id_any(self, order_id: int) -> Order | None:
+        order = await self._session.scalar(select(OrderModel).where(OrderModel.id == order_id))
+        if order is None:
+            return None
+        return await self._with_items(order)
+
+    @timed
+    @translate_db_errors
+    async def update_status(self, order_id: int, current: OrderStatus, new: OrderStatus) -> bool:
+        updated_id = await self._session.scalar(
+            update(OrderModel)
+            .where(OrderModel.id == order_id, OrderModel.status == current)
+            .values(status=new)
+            .returning(OrderModel.id)
+        )
+        return updated_id is not None

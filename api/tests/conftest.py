@@ -1,5 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 
 from sqlalchemy.engine import make_url
 
@@ -15,11 +16,15 @@ if not _db_name.startswith("test_"):  # NEW
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from core.database import Base, get_db
 from main import app
+from models.dish import Dish
+from models.restaurant import Restaurant
+from scripts.seed import seed
 
 pytest_plugins = ["anyio"]
 
@@ -133,3 +138,43 @@ async def user(client: AsyncClient) -> dict:
 @pytest.fixture
 async def auth_headers(client: AsyncClient, user: dict) -> dict[str, str]:
     return await login(client)
+
+
+@dataclass(frozen=True)
+class Catalog:
+    """Ids of the seeded catalog, looked up by name.
+
+    Ids are never hard-coded: rolled-back tests don't reset Postgres sequences, so the same
+    restaurant gets a different id depending on which tests ran before.
+    """
+
+    restaurant_ids: dict[str, int]
+    dish_ids: dict[tuple[str, str], int]
+    dish_prices: dict[tuple[str, str], int]
+
+    def restaurant(self, name: str) -> int:
+        return self.restaurant_ids[name]
+
+    def dish(self, restaurant: str, dish: str) -> int:
+        return self.dish_ids[(restaurant, dish)]
+
+    def price(self, restaurant: str, dish: str) -> int:
+        return self.dish_prices[(restaurant, dish)]
+
+
+@pytest.fixture
+async def catalog(db_session: AsyncSession) -> Catalog:
+    await seed(db_session)
+    rows = await db_session.execute(
+        select(Restaurant.name, Dish.name, Dish.id, Dish.price_cents, Restaurant.id).join(
+            Restaurant, Dish.restaurant_id == Restaurant.id
+        )
+    )
+    restaurant_ids: dict[str, int] = {}
+    dish_ids: dict[tuple[str, str], int] = {}
+    dish_prices: dict[tuple[str, str], int] = {}
+    for restaurant_name, dish_name, dish_id, price_cents, restaurant_id in rows:
+        restaurant_ids[restaurant_name] = restaurant_id
+        dish_ids[(restaurant_name, dish_name)] = dish_id
+        dish_prices[(restaurant_name, dish_name)] = price_cents
+    return Catalog(restaurant_ids, dish_ids, dish_prices)

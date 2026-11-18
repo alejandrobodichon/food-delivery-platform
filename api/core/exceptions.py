@@ -27,6 +27,9 @@ class UnprocessableError(AppError): ...
 class ServiceUnavailableError(AppError): ...
 
 
+class InvalidStatusTransition(ConflictError): ...
+
+
 class DatabaseUnavailable(ServiceUnavailableError):
     message = "Database unavailable."
 

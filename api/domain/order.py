@@ -3,6 +3,19 @@ from datetime import datetime
 
 from core.enums import OrderStatus
 
+ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
+    OrderStatus.PENDING: frozenset({OrderStatus.PAID, OrderStatus.CANCELLED}),
+    OrderStatus.PAID: frozenset({OrderStatus.PREPARING, OrderStatus.CANCELLED}),
+    OrderStatus.PREPARING: frozenset({OrderStatus.ON_THE_WAY}),
+    OrderStatus.ON_THE_WAY: frozenset({OrderStatus.DELIVERED}),
+    OrderStatus.DELIVERED: frozenset(),
+    OrderStatus.CANCELLED: frozenset(),
+}
+
+
+def can_transition(current: OrderStatus, new: OrderStatus) -> bool:
+    return new in ALLOWED_TRANSITIONS[current]
+
 
 @dataclass(frozen=True)
 class OrderItem:
