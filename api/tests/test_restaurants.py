@@ -16,7 +16,7 @@ async def restaurant_id_by_name(db_session: AsyncSession, name: str) -> int:
 
 @pytest.mark.anyio
 async def test_list_restaurants_empty(client: AsyncClient):
-    response = await client.get("/restaurants")
+    response = await client.get("/v1/restaurants")
 
     assert response.status_code == 200
     assert response.json() == []
@@ -26,7 +26,7 @@ async def test_list_restaurants_empty(client: AsyncClient):
 async def test_list_restaurants_includes_closed_ones(client: AsyncClient, db_session: AsyncSession):
     await seed(db_session)
 
-    response = await client.get("/restaurants")
+    response = await client.get("/v1/restaurants")
 
     assert response.status_code == 200
     body = response.json()
@@ -40,7 +40,7 @@ async def test_get_restaurant(client: AsyncClient, db_session: AsyncSession):
     await seed(db_session)
     restaurant_id = await restaurant_id_by_name(db_session, "Burger Palace")
 
-    response = await client.get(f"/restaurants/{restaurant_id}")
+    response = await client.get(f"/v1/restaurants/{restaurant_id}")
 
     assert response.status_code == 200
     assert response.json() == {"id": restaurant_id, "name": "Burger Palace", "is_open": True}
@@ -48,7 +48,7 @@ async def test_get_restaurant(client: AsyncClient, db_session: AsyncSession):
 
 @pytest.mark.anyio
 async def test_get_restaurant_not_found(client: AsyncClient):
-    response = await client.get("/restaurants/999999")
+    response = await client.get("/v1/restaurants/999999")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Restaurant not found."}
@@ -61,7 +61,7 @@ async def test_list_dishes_returns_only_that_restaurant(
     await seed(db_session)
     restaurant_id = await restaurant_id_by_name(db_session, "Pasta Nostra")
 
-    response = await client.get(f"/restaurants/{restaurant_id}/dishes")
+    response = await client.get(f"/v1/restaurants/{restaurant_id}/dishes")
 
     assert response.status_code == 200
     body = response.json()
@@ -82,7 +82,7 @@ async def test_list_dishes_empty_menu(client: AsyncClient, db_session: AsyncSess
     db_session.add(restaurant)
     await db_session.flush()
 
-    response = await client.get(f"/restaurants/{restaurant.id}/dishes")
+    response = await client.get(f"/v1/restaurants/{restaurant.id}/dishes")
 
     assert response.status_code == 200
     assert response.json() == []
@@ -90,7 +90,7 @@ async def test_list_dishes_empty_menu(client: AsyncClient, db_session: AsyncSess
 
 @pytest.mark.anyio
 async def test_list_dishes_restaurant_not_found(client: AsyncClient):
-    response = await client.get("/restaurants/999999/dishes")
+    response = await client.get("/v1/restaurants/999999/dishes")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Restaurant not found."}

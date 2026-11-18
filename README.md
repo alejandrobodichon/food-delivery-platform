@@ -111,17 +111,19 @@ CI runs ruff, mypy and pytest on every push and pull request.
 
 ## API
 
+All endpoints live under `/v1`, except `/health`.
+
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Checks Postgres and Redis; `503` if either is down |
-| `GET` | `/restaurants` | List restaurants, including closed ones |
-| `GET` | `/restaurants/{id}` | One restaurant; `404` if it doesn't exist |
-| `GET` | `/restaurants/{id}/dishes` | A restaurant's menu; `404` if the restaurant doesn't exist |
-| `POST` | `/users` | Register |
-| `POST` | `/auth/token` | Log in, returns a JWT |
-| `GET` | `/users/me` | Current user |
-| `GET` | `/users`, `/users/{id}` | Public user profiles |
-| `PATCH` / `DELETE` | `/users/{id}` | Update or delete your own user; `403` for anyone else's, whether the id exists or not |
+| `GET` | `/v1/restaurants` | List restaurants, including closed ones |
+| `GET` | `/v1/restaurants/{id}` | One restaurant; `404` if it doesn't exist |
+| `GET` | `/v1/restaurants/{id}/dishes` | A restaurant's menu; `404` if the restaurant doesn't exist |
+| `POST` | `/v1/users` | Register |
+| `POST` | `/v1/auth/token` | Log in, returns a JWT |
+| `GET` | `/v1/users/me` | Current user |
+| `GET` | `/v1/users`, `/v1/users/{id}` | Public user profiles |
+| `PATCH` / `DELETE` | `/v1/users/{id}` | Update or delete your own user; `403` for anyone else's, whether the id exists or not |
 
 ## Architecture
 
@@ -198,6 +200,36 @@ that runs outside a request, such as the seed script.
 `PATCH` and `DELETE` on `/users/{id}` return `403` when the id isn't yours, **whether that id
 exists or not**. Returning `404` for missing ids would let anyone enumerate which ids exist by
 comparing responses. The user always comes from the token, never from the request body.
+
+### `Idempotency-Key` is required on `POST /orders`
+
+A network error after the server created an order makes the client retry. Without protection that
+retry creates a second order, and a second charge. The client sends an `Idempotency-Key` header,
+generated once per checkout attempt and reused on every retry, and a retry with the same key
+returns the original order.
+
+- **It's required, not optional.** Public APIs such as Stripe make it optional for compatibility
+  with clients that don't send it. Here the only clients are our own apps, so we'd rather reject a
+  request without the header (`422`) than risk a duplicated, double-charged order.
+- **Uniqueness is enforced by the database**, with `UNIQUE (customer_id, idempotency_key)`. Looking
+  the key up before inserting isn't enough on its own: two simultaneous retries would both find
+  nothing and both insert. The insert uses `ON CONFLICT DO NOTHING`, and the request that loses the
+  race returns the order that won.
+- **The key is scoped to the customer**, so one customer's key can never return another
+  customer's order.
+- **A retry returns the original order even if things changed since**, for example the restaurant
+  closed. The key lookup runs before any validation.
+
+### The API is versioned in the URL
+
+Every endpoint is under `/v1`. Mobile apps can't be force-updated, so old app versions keep calling
+the API for months after a release. A breaking change (renaming or removing a field, changing a
+type, making something required) ships as `/v2` while `/v1` keeps working. Additive changes (a new
+endpoint, a new response field, a new optional parameter) don't need a new version.
+
+The version goes in the URL rather than in a header because it's visible in every log line and
+error, easy to call with `curl`, simple to route, and caches tell versions apart without extra
+configuration. `/health` stays unversioned: load balancers and monitoring use it, not clients.
 
 ### Observability
 

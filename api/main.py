@@ -5,7 +5,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from core.database import engine, get_db
 from core.error_handlers import register_exception_handlers
 from core.logging_config import request_id_var, setup_logging
 from dependencies import get_redis
-from routers import auth, restaurants, users
+from routers import auth, orders, restaurants, users
 
 setup_logging()
 logger = logging.getLogger("api.request")
@@ -36,9 +36,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 register_exception_handlers(app)
 
-app.include_router(users.router, prefix="/users", tags=["users"])
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
-app.include_router(restaurants.router, prefix="/restaurants", tags=["restaurants"])
+api_v1 = APIRouter(prefix="/v1")
+api_v1.include_router(users.router, prefix="/users", tags=["users"])
+api_v1.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_v1.include_router(restaurants.router, prefix="/restaurants", tags=["restaurants"])
+api_v1.include_router(orders.router, prefix="/orders", tags=["orders"])
+app.include_router(api_v1)
 
 
 @app.get("/health")

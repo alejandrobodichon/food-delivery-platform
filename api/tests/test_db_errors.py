@@ -18,7 +18,7 @@ async def test_database_down_returns_503(client: AsyncClient):
 
     app.dependency_overrides[get_db] = override_get_db
 
-    response = await client.get("/restaurants")
+    response = await client.get("/v1/restaurants")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "Database unavailable."}

@@ -101,7 +101,7 @@ async def create_test_user(
     password: str = "testpassword123",
 ) -> dict:
     response = await client.post(
-        "/users",
+        "/v1/users",
         json={
             "username": username,
             "email": email,
@@ -118,7 +118,7 @@ async def login(
     password: str = "testpassword123",
 ) -> dict[str, str]:
     response = await client.post(
-        "/auth/token",
+        "/v1/auth/token",
         data={"username": username, "password": password},
     )
     assert response.status_code == 200, f"Failed to log in: {response.text}"

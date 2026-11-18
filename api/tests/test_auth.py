@@ -9,7 +9,7 @@ async def test_login_returns_bearer_token(client: AsyncClient):
     await create_test_user(client)
 
     response = await client.post(
-        "/auth/token",
+        "/v1/auth/token",
         data={"username": "testuser", "password": "testpassword123"},
     )
 
@@ -24,7 +24,7 @@ async def test_login_is_case_insensitive_on_username(client: AsyncClient):
     await create_test_user(client)
 
     response = await client.post(
-        "/auth/token",
+        "/v1/auth/token",
         data={"username": "TestUser", "password": "testpassword123"},
     )
 
@@ -36,7 +36,7 @@ async def test_login_wrong_password(client: AsyncClient):
     await create_test_user(client)
 
     response = await client.post(
-        "/auth/token",
+        "/v1/auth/token",
         data={"username": "testuser", "password": "wrong-password"},
     )
 
@@ -47,7 +47,7 @@ async def test_login_wrong_password(client: AsyncClient):
 @pytest.mark.anyio
 async def test_login_unknown_user_gets_same_error_as_wrong_password(client: AsyncClient):
     response = await client.post(
-        "/auth/token",
+        "/v1/auth/token",
         data={"username": "ghost", "password": "testpassword123"},
     )
 
@@ -57,7 +57,7 @@ async def test_login_unknown_user_gets_same_error_as_wrong_password(client: Asyn
 
 @pytest.mark.anyio
 async def test_protected_endpoint_without_token(client: AsyncClient):
-    response = await client.get("/users/me")
+    response = await client.get("/v1/users/me")
 
     assert response.status_code == 401
 
@@ -65,7 +65,7 @@ async def test_protected_endpoint_without_token(client: AsyncClient):
 @pytest.mark.anyio
 async def test_protected_endpoint_with_invalid_token(client: AsyncClient):
     response = await client.get(
-        "/users/me",
+        "/v1/users/me",
         headers={"Authorization": "Bearer not-a-real-token"},
     )
 

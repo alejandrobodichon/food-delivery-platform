@@ -8,14 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import verify_access_token
 from core.database import get_db
 from core.exceptions import NotAuthenticated
-from models.user import User
+from domain.user_profile import UserProfile
+from repositories.order_repository import OrderRepository
 from repositories.restaurant_repository import RestaurantRepository
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthService
+from services.order_service import OrderService
 from services.restaurant_service import RestaurantService
 from services.user_service import UserService
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/auth/token")
 
 
 def get_user_repository(db: Annotated[AsyncSession, Depends(get_db)]) -> UserRepository:
@@ -44,6 +46,20 @@ def get_restaurant_service(
 RestaurantServiceDep = Annotated[RestaurantService, Depends(get_restaurant_service)]
 
 
+def get_order_repository(db: Annotated[AsyncSession, Depends(get_db)]) -> OrderRepository:
+    return OrderRepository(db)
+
+
+def get_order_service(
+    order_repo: Annotated[OrderRepository, Depends(get_order_repository)],
+    restaurant_repo: Annotated[RestaurantRepository, Depends(get_restaurant_repository)],
+) -> OrderService:
+    return OrderService(order_repo, restaurant_repo)
+
+
+OrderServiceDep = Annotated[OrderService, Depends(get_order_service)]
+
+
 def get_auth_service(
     repo: Annotated[UserRepository, Depends(get_user_repository)],
 ) -> AuthService:
@@ -56,7 +72,7 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 async def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
     repo: Annotated[UserRepository, Depends(get_user_repository)],
-) -> User:
+) -> UserProfile:
     user_id = verify_access_token(token)
     if user_id is None:
         raise NotAuthenticated()
@@ -66,7 +82,7 @@ async def get_current_user(
     return user
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUser = Annotated[UserProfile, Depends(get_current_user)]
 
 
 def get_redis(request: Request) -> Redis:

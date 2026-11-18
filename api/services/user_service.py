@@ -6,7 +6,6 @@ from core.exceptions import (
     UserNotFound,
 )
 from domain.user_profile import UserProfile
-from models.user import User
 from repositories.user_repository import UserRepository
 from schemas.user import UserCreate, UserUpdate
 
@@ -15,28 +14,18 @@ class UserService:
     def __init__(self, user_repo: UserRepository):
         self._repo = user_repo
 
-    async def create(self, user_create: UserCreate) -> User:
+    async def create(self, user_create: UserCreate) -> UserProfile:
         if await self._repo.exist_by_email(user_create.email):
             raise EmailAlreadyExists()
 
         if await self._repo.exist_by_username(user_create.username):
             raise UsernameAlreadyExists()
 
-        user = User(
+        return await self._repo.create(
             username=user_create.username,
             email=user_create.email,
             password_hash=hash_password(user_create.password),
         )
-
-        return await self._repo.save(user=user)
-
-    async def get(self, user_id: int) -> User:
-        user = await self._repo.get_by_id(user_id)
-
-        if user is None:
-            raise UserNotFound()
-
-        return user
 
     async def get_profile(self, user_id: int) -> UserProfile:
         user = await self._repo.get_by_id(user_id)
@@ -44,18 +33,16 @@ class UserService:
         if user is None:
             raise UserNotFound()
 
-        return UserProfile(id=user.id, email=user.email, username=user.username)
+        return user
 
     async def list_users(self) -> list[UserProfile]:
-        users = await self._repo.get_all()
+        return await self._repo.get_all()
 
-        return [UserProfile(id=user.id, email=user.email, username=user.username) for user in users]
-
-    async def update(self, user_id: int, data: UserUpdate, current_user_id: int) -> User:
+    async def update(self, user_id: int, data: UserUpdate, current_user_id: int) -> UserProfile:
         if user_id != current_user_id:
             raise NotAuthorized()
 
-        user = await self.get(user_id)
+        user = await self.get_profile(user_id)
 
         if data.email is not None and data.email != user.email:
             if await self._repo.exist_by_email(data.email):
@@ -64,14 +51,12 @@ class UserService:
             if await self._repo.exist_by_username(data.username):
                 raise UsernameAlreadyExists()
 
-        for field, value in data.model_dump(exclude_unset=True, exclude_none=True).items():
-            setattr(user, field, value)
-
-        return await self._repo.save(user)
+        changes = data.model_dump(exclude_unset=True, exclude_none=True)
+        return await self._repo.update(user_id, changes)
 
     async def delete(self, user_id: int, current_user_id: int) -> None:
         if user_id != current_user_id:
             raise NotAuthorized()
-        user = await self.get(user_id)
 
-        await self._repo.delete(user)
+        await self.get_profile(user_id)
+        await self._repo.delete(user_id)

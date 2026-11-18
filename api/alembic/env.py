@@ -6,6 +6,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import models.dish  # noqa: F401
+import models.order  # noqa: F401
+import models.order_item  # noqa: F401
 import models.restaurant  # noqa: F401
 import models.user  # noqa: F401
 from alembic import context

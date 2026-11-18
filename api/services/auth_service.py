@@ -8,7 +8,7 @@ class AuthService:
         self._user_repository = user_repository
 
     async def login(self, username: str, password: str) -> str:
-        user = await self._user_repository.get_by_username(username.lower())
-        if user is None or not verify_password(password, user.password_hash):
+        credentials = await self._user_repository.get_credentials(username.lower())
+        if credentials is None or not verify_password(password, credentials.password_hash):
             raise InvalidCredentials()
-        return create_access_token(user.id)
+        return create_access_token(credentials.id)

@@ -39,6 +39,14 @@ class UserNotFound(NotFoundError):
     message = "User not found."
 
 
+class DishNotFound(UnprocessableError):
+    message = "Dish not found."
+
+
+class OrderNotFound(NotFoundError):
+    message = "Order not found."
+
+
 class UsernameAlreadyExists(ConflictError):
     message = "Username already exists."
 
@@ -65,3 +73,15 @@ class NotAuthenticated(UnauthorizedError):
 
 class RestaurantNotFound(NotFoundError):
     message = "Restaurant not found."
+
+
+class InvalidOrder(UnprocessableError):
+    message = "Restaurant or dishes not found."
+
+
+class RestaurantClosed(ConflictError):
+    message = "Restaurant is closed."
+
+
+class DishUnavailable(ConflictError):
+    message = "Dish is not available."
