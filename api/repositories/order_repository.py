@@ -123,18 +123,30 @@ class OrderRepository:
 
     @timed
     @translate_db_errors
-    async def update_status(self, order_id: int, current: OrderStatus, new: OrderStatus) -> bool:
-        updated_id = await self._session.scalar(
+    async def update_status(
+        self, order_id: int, expected_version: int, current: OrderStatus, new: OrderStatus
+    ) -> Order | None:
+        order = await self._session.scalar(
             update(OrderModel)
-            .where(OrderModel.id == order_id, OrderModel.status == current)
-            .values(status=new)
-            .returning(OrderModel.id)
+            .where(
+                OrderModel.id == order_id,
+                OrderModel.status == current,
+                OrderModel.version == expected_version,
+            )
+            .values(status=new, version=OrderModel.version + 1)
+            .returning(OrderModel)
         )
-        return updated_id is not None
+        if order is None:
+            return None
+        return await self._with_items(order)
 
     @timed
     @translate_db_errors
-    async def assign_rider(self, order_id: int, rider_id: int) -> Order | None:
+    async def assign_rider(
+        self,
+        order_id: int,
+        rider_id: int,
+    ) -> Order | None:
         order = await self._session.scalar(
             update(OrderModel)
             .where(
@@ -142,7 +154,7 @@ class OrderRepository:
                 OrderModel.rider_id.is_(None),
                 OrderModel.status.in_([OrderStatus.PAID, OrderStatus.PREPARING]),
             )
-            .values(rider_id=rider_id)
+            .values(rider_id=rider_id, version=OrderModel.version + 1)
             .returning(OrderModel)
         )
         if order is None:

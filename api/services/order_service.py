@@ -1,5 +1,3 @@
-from dataclasses import replace
-
 from core.enums import OrderStatus
 from core.exceptions import (
     DishSoldOut,
@@ -10,6 +8,7 @@ from core.exceptions import (
     OrderNotAvailable,
     OrderNotFound,
     RestaurantClosed,
+    StaleOrder,
 )
 from domain.order import Order, OrderItem, can_transition
 from repositories.order_repository import OrderRepository
@@ -88,15 +87,18 @@ class OrderService:
             raise InternalError()
         return existing
 
-    async def change_status(self, order_id: int, new: OrderStatus) -> Order:
+    async def change_status(self, order_id: int, new: OrderStatus, version: int) -> Order:
         order = await self._order_repo.get_by_id_any(order_id)
         if order is None:
             raise OrderNotFound()
+        if order.version != version:
+            raise StaleOrder()
         if not can_transition(order.status, new):
             raise InvalidStatusTransition(f"Cannot change status from {order.status} to {new}.")
-        if not await self._order_repo.update_status(order_id, order.status, new):
-            raise InvalidStatusTransition("Order status changed concurrently; retry.")
-        return replace(order, status=new)
+        updated = await self._order_repo.update_status(order_id, version, order.status, new)
+        if updated is None:
+            raise StaleOrder()
+        return updated
 
     async def accept(self, order_id: int, rider_id: int) -> Order:
         order = await self._order_repo.assign_rider(order_id, rider_id)

@@ -96,3 +96,7 @@ class OrderNotAvailable(ConflictError):
 
 class DishSoldOut(ConflictError):
     message = "Dish is sold out."
+
+
+class StaleOrder(ConflictError):
+    message = "Order was modified by someone else; reload it and try again."

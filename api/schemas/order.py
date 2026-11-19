@@ -36,3 +36,9 @@ class OrderResponse(BaseModel):
     total_cents: int
     items: list[OrderItemResponse]
     created_at: datetime
+    version: int
+
+
+class OrderStatusUpdate(BaseModel):
+    status: OrderStatus
+    version: int = Field(ge=1)
