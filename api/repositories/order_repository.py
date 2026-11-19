@@ -131,3 +131,20 @@ class OrderRepository:
             .returning(OrderModel.id)
         )
         return updated_id is not None
+
+    @timed
+    @translate_db_errors
+    async def assign_rider(self, order_id: int, rider_id: int) -> Order | None:
+        order = await self._session.scalar(
+            update(OrderModel)
+            .where(
+                OrderModel.id == order_id,
+                OrderModel.rider_id.is_(None),
+                OrderModel.status.in_([OrderStatus.PAID, OrderStatus.PREPARING]),
+            )
+            .values(rider_id=rider_id)
+            .returning(OrderModel)
+        )
+        if order is None:
+            return None
+        return await self._with_items(order)

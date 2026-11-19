@@ -6,6 +6,7 @@ from core.exceptions import (
     InternalError,
     InvalidOrder,
     InvalidStatusTransition,
+    OrderNotAvailable,
     OrderNotFound,
     RestaurantClosed,
 )
@@ -85,3 +86,11 @@ class OrderService:
         if not await self._order_repo.update_status(order_id, order.status, new):
             raise InvalidStatusTransition("Order status changed concurrently; retry.")
         return replace(order, status=new)
+
+    async def accept(self, order_id: int, rider_id: int) -> Order:
+        order = await self._order_repo.assign_rider(order_id, rider_id)
+        if order is not None:
+            return order
+        if await self._order_repo.get_by_id_any(order_id) is None:
+            raise OrderNotFound()
+        raise OrderNotAvailable()

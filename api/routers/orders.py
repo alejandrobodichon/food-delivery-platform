@@ -24,3 +24,8 @@ async def create_order(
 @router.get("/{order_id}", response_model=OrderResponse)
 async def get_order(order_id: int, service: OrderServiceDep, current_user: CurrentUser):
     return await service.get_by_id(order_id, current_user.id)
+
+
+@router.post("/{order_id}/accept", response_model=OrderResponse)
+async def accept_order(order_id: int, service: OrderServiceDep, current_user: CurrentUser):
+    return await service.accept(order_id, current_user.id)

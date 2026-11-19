@@ -88,3 +88,7 @@ class RestaurantClosed(ConflictError):
 
 class DishUnavailable(ConflictError):
     message = "Dish is not available."
+
+
+class OrderNotAvailable(ConflictError):
+    message = "Order is not available to accept."
