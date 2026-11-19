@@ -13,56 +13,56 @@ from core.database import AsyncSessionLocal, engine, transaction
 from models.dish import Dish
 from models.restaurant import Restaurant
 
-# (restaurant name, is_open, [(dish name, price in cents, is_available)])
-CATALOG: list[tuple[str, bool, list[tuple[str, int, bool]]]] = [
+# (restaurant name, is_open, [(dish name, price in cents, is_available, units_left)])
+CATALOG: list[tuple[str, bool, list[tuple[str, int, bool, int | None]]]] = [
     (
         "Burger Palace",
         True,
         [
-            ("Classic Burger", 950000, True),
-            ("Cheese Burger", 1050000, True),
-            ("Veggie Burger", 990000, True),
-            ("French Fries", 450000, True),
+            ("Classic Burger", 950000, True, None),
+            ("Cheese Burger", 1050000, True, None),
+            ("Veggie Burger", 990000, True, None),
+            ("French Fries", 450000, True, None),
         ],
     ),
     (
         "Pasta Nostra",
         True,
         [
-            ("Spaghetti Bolognese", 1200000, True),
-            ("Fettuccine Alfredo", 1250000, True),
-            ("Lasagna", 1400000, False),  # sold out: lets us test unavailable dishes
-            ("Tiramisu", 650000, True),
+            ("Spaghetti Bolognese", 1200000, True, None),
+            ("Fettuccine Alfredo", 1250000, True, None),
+            ("Lasagna", 1400000, False, None),  # sold out: lets us test unavailable dishes
+            ("Tiramisu", 650000, True, None),
         ],
     ),
     (
         "Green Bowl",
         True,
         [
-            ("Caesar Salad", 880000, True),
-            ("Quinoa Bowl", 970000, True),
-            ("Poke Bowl", 1150000, True),
-            ("Fresh Lemonade", 350000, True),
+            ("Caesar Salad", 880000, True, None),
+            ("Quinoa Bowl", 970000, True, 5),
+            ("Poke Bowl", 1150000, True, None),
+            ("Fresh Lemonade", 350000, True, None),
         ],
     ),
     (
         "Taco Loco",
         True,
         [
-            ("Beef Tacos", 900000, True),
-            ("Chicken Burrito", 1100000, True),
-            ("Nachos", 750000, True),
-            ("Guacamole", 500000, True),
+            ("Beef Tacos", 900000, True, None),
+            ("Chicken Burrito", 1100000, True, None),
+            ("Nachos", 750000, True, None),
+            ("Guacamole", 500000, True, None),
         ],
     ),
     (
         "Sushi Go",
         False,  # closed: lets us test that closed restaurants can't take orders
         [
-            ("Salmon Roll", 1300000, True),
-            ("Tuna Nigiri", 1450000, True),
-            ("Miso Soup", 400000, True),
-            ("Edamame", 380000, True),
+            ("Salmon Roll", 1300000, True, None),
+            ("Tuna Nigiri", 1450000, True, None),
+            ("Miso Soup", 400000, True, None),
+            ("Edamame", 380000, True, None),
         ],
     ),
 ]
@@ -88,9 +88,10 @@ async def seed(session: AsyncSession) -> None:
                     "name": name,
                     "price_cents": price_cents,
                     "is_available": is_available,
+                    "units_left": units_left,
                 }
                 for restaurant_name, _, dishes in CATALOG
-                for name, price_cents, is_available in dishes
+                for name, price_cents, is_available, units_left in dishes
             ]
         )
         .on_conflict_do_nothing(constraint="uq_dishes_restaurant_id_name")

@@ -14,3 +14,4 @@ class Dish:
     name: str
     price_cents: int
     is_available: bool
+    units_left: int | None

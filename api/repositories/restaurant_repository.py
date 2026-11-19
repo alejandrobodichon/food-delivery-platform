@@ -1,6 +1,6 @@
 from collections.abc import Collection
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db_errors import translate_db_errors
@@ -20,6 +20,7 @@ def _to_dish(model: DishModel) -> Dish:
         name=model.name,
         price_cents=model.price_cents,
         is_available=model.is_available,
+        units_left=model.units_left,
     )
 
 
@@ -58,3 +59,14 @@ class RestaurantRepository:
             .order_by(DishModel.id)
         )
         return [_to_dish(d) for d in result]
+
+    @timed
+    @translate_db_errors
+    async def take_units(self, dish_id: int, quantity: int) -> bool:
+        taken_id = await self._session.scalar(
+            update(DishModel)
+            .where(DishModel.id == dish_id, DishModel.units_left >= quantity)
+            .values(units_left=DishModel.units_left - quantity)
+            .returning(DishModel.id)
+        )
+        return taken_id is not None

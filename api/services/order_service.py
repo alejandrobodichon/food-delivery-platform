@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from core.enums import OrderStatus
 from core.exceptions import (
+    DishSoldOut,
     DishUnavailable,
     InternalError,
     InvalidOrder,
@@ -47,6 +48,12 @@ class OrderService:
         if any(not dish.is_available for dish in dishes):
             raise DishUnavailable()
 
+        units_by_dish = {dish.id: dish.units_left for dish in dishes}
+        for requested in data.items:
+            units_left = units_by_dish[requested.dish_id]
+            if units_left is not None and units_left < requested.quantity:
+                raise DishSoldOut()
+
         # Create the order
         price_by_dish = {dish.id: dish.price_cents for dish in dishes}
         items = tuple(
@@ -66,8 +73,12 @@ class OrderService:
             items=items,
             total_cents=total_cents,
         )
+        limited_items = [item for item in items if units_by_dish[item.dish_id] is not None]
 
         if order is not None:
+            for item in sorted(limited_items, key=lambda i: i.dish_id):
+                if not await self._restaurant_repo.take_units(item.dish_id, item.quantity):
+                    raise DishSoldOut()
             return order
 
         existing = await self._order_repo.get_by_idempotency_key(

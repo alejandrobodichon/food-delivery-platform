@@ -92,3 +92,7 @@ class DishUnavailable(ConflictError):
 
 class OrderNotAvailable(ConflictError):
     message = "Order is not available to accept."
+
+
+class DishSoldOut(ConflictError):
+    message = "Dish is sold out."
