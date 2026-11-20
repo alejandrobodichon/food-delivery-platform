@@ -20,10 +20,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from core.auth import create_access_token
 from core.database import Base, get_db
+from core.enums import UserRole
+from domain.user_profile import UserProfile
 from main import app
 from models.dish import Dish
 from models.restaurant import Restaurant
+from models.user import User
 from scripts.seed import seed
 
 pytest_plugins = ["anyio"]
@@ -138,6 +142,40 @@ async def user(client: AsyncClient) -> dict:
 @pytest.fixture
 async def auth_headers(client: AsyncClient, user: dict) -> dict[str, str]:
     return await login(client)
+
+
+@pytest.fixture
+def customer(user: dict) -> UserProfile:
+    """The `user` fixture as the service sees it: everyone who registers is a customer."""
+    return UserProfile(
+        id=user["id"],
+        username=user["username"],
+        email=user["email"],
+        role=UserRole.CUSTOMER,
+        restaurant_id=None,
+    )
+
+
+def bearer(user_id: int) -> dict[str, str]:
+    """Auth headers without going through /auth/token: no password needed."""
+    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
+
+
+async def create_member(
+    session: AsyncSession, username: str, role: UserRole, restaurant_id: int | None = None
+) -> UserProfile:
+    """Inserts a user with any role. Registration only creates customers, so staff and riders
+    are inserted directly."""
+    member = User(
+        username=username,
+        email=f"{username}@example.com",
+        password_hash="-",
+        role=role,
+        restaurant_id=restaurant_id,
+    )
+    session.add(member)
+    await session.flush()
+    return UserProfile(member.id, username, member.email, role, restaurant_id)
 
 
 @dataclass(frozen=True)

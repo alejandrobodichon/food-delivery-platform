@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Response, status
 
-from dependencies import CurrentUser, OrderServiceDep
+from dependencies import CurrentUser, CustomerUser, OrderServiceDep, RiderUser
 from schemas.order import OrderCreate, OrderResponse, OrderStatusUpdate
 
 router = APIRouter()
@@ -13,7 +13,7 @@ async def create_order(
     data: OrderCreate,
     idempotency_key: Annotated[str, Header(min_length=1, max_length=100)],
     service: OrderServiceDep,
-    current_user: CurrentUser,
+    current_user: CustomerUser,
     response: Response,
 ):
     order = await service.create(current_user.id, data, idempotency_key)
@@ -27,7 +27,7 @@ async def get_order(order_id: int, service: OrderServiceDep, current_user: Curre
 
 
 @router.post("/{order_id}/accept", response_model=OrderResponse)
-async def accept_order(order_id: int, service: OrderServiceDep, current_user: CurrentUser):
+async def accept_order(order_id: int, service: OrderServiceDep, current_user: RiderUser):
     return await service.accept(order_id, current_user.id)
 
 
@@ -35,4 +35,4 @@ async def accept_order(order_id: int, service: OrderServiceDep, current_user: Cu
 async def update_order_status(
     order_id: int, data: OrderStatusUpdate, service: OrderServiceDep, current_user: CurrentUser
 ):
-    return await service.change_status(order_id, data.status, data.version)
+    return await service.change_status(order_id, data.status, data.version, current_user)

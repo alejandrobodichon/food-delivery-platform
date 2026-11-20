@@ -1,20 +1,27 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from core.enums import OrderStatus
+from core.enums import OrderStatus, UserRole
+from domain.user_profile import UserProfile
 
-ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
-    OrderStatus.PENDING: frozenset({OrderStatus.PAID, OrderStatus.CANCELLED}),
-    OrderStatus.PAID: frozenset({OrderStatus.PREPARING, OrderStatus.CANCELLED}),
-    OrderStatus.PREPARING: frozenset({OrderStatus.ON_THE_WAY}),
-    OrderStatus.ON_THE_WAY: frozenset({OrderStatus.DELIVERED}),
-    OrderStatus.DELIVERED: frozenset(),
-    OrderStatus.CANCELLED: frozenset(),
+S = OrderStatus
+
+ALLOWED_TRANSITIONS: dict[S, frozenset[S]] = {
+    S.PENDING: frozenset({S.PAID, S.CANCELLED}),
+    S.PAID: frozenset({S.PREPARING, S.CANCELLED}),
+    S.PREPARING: frozenset({S.ON_THE_WAY}),
+    S.ON_THE_WAY: frozenset({S.DELIVERED}),
+    S.DELIVERED: frozenset(),
+    S.CANCELLED: frozenset(),
 }
 
-
-def can_transition(current: OrderStatus, new: OrderStatus) -> bool:
-    return new in ALLOWED_TRANSITIONS[current]
+TRANSITION_ROLE: dict[tuple[S, S], UserRole] = {
+    (S.PENDING, S.CANCELLED): UserRole.CUSTOMER,
+    (S.PAID, S.PREPARING): UserRole.RESTAURANT,
+    (S.PAID, S.CANCELLED): UserRole.RESTAURANT,
+    (S.PREPARING, S.ON_THE_WAY): UserRole.RIDER,
+    (S.ON_THE_WAY, S.DELIVERED): UserRole.RIDER,
+}
 
 
 @dataclass(frozen=True)
@@ -35,3 +42,21 @@ class Order:
     version: int
     created_at: datetime
     items: tuple[OrderItem, ...]
+
+
+def can_transition(current: OrderStatus, new: OrderStatus) -> bool:
+    return new in ALLOWED_TRANSITIONS[current]
+
+
+def is_party(order: Order, user: UserProfile) -> bool:
+    match user.role:
+        case UserRole.CUSTOMER:
+            return order.customer_id == user.id
+        case UserRole.RESTAURANT:
+            return order.restaurant_id == user.restaurant_id
+        case UserRole.RIDER:
+            return order.rider_id == user.id
+
+
+def can_make(order: Order, user: UserProfile, new: OrderStatus) -> bool:
+    return TRANSITION_ROLE.get((order.status, new)) == user.role

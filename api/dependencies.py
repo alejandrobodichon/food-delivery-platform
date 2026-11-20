@@ -103,3 +103,5 @@ def require_role(*roles: UserRole):
 
 
 RiderUser = Annotated[UserProfile, Depends(require_role(UserRole.RIDER))]
+
+CustomerUser = Annotated[UserProfile, Depends(require_role(UserRole.CUSTOMER))]

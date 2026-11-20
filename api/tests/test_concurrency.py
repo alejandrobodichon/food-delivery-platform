@@ -16,7 +16,6 @@ from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import create_access_token
 from core.database import AsyncSessionLocal, engine, transaction
 from core.enums import OrderStatus, UserRole
 from main import app
@@ -25,6 +24,7 @@ from models.order import Order as OrderModel
 from models.restaurant import Restaurant
 from models.user import User
 from scripts.seed import seed
+from tests.conftest import bearer
 
 RESTAURANT = "Burger Palace"
 DISH = "Classic Burger"
@@ -56,18 +56,16 @@ async def real_client(committed_db) -> AsyncGenerator[AsyncClient]:
         yield client
 
 
-def bearer(user_id: int) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_access_token(user_id)}"}
-
-
-async def create_users(session: AsyncSession, prefix: str, count: int) -> list[int]:
+async def create_users(
+    session: AsyncSession, prefix: str, count: int, role: UserRole = UserRole.CUSTOMER
+) -> list[int]:
     """Inserts users directly: hashing a password per user through the API would be slow."""
     users = [
         User(
             username=f"{prefix}{i}",
             email=f"{prefix}{i}@example.com",
             password_hash="-",
-            role=UserRole.CUSTOMER,
+            role=role,
         )
         for i in range(count)
     ]
@@ -104,7 +102,7 @@ async def create_rider_race(status: OrderStatus) -> RiderRace:
     async with transaction(AsyncSessionLocal) as session:
         await seed(session)
         [customer_id] = await create_users(session, "customer", 1)
-        rider_ids = await create_users(session, "rider", RIDERS)
+        rider_ids = await create_users(session, "rider", RIDERS, UserRole.RIDER)
         restaurant_id, _ = await ids_of(session)
         order = OrderModel(
             customer_id=customer_id,

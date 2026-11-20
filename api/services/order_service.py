@@ -5,12 +5,14 @@ from core.exceptions import (
     InternalError,
     InvalidOrder,
     InvalidStatusTransition,
+    NotAuthorized,
     OrderNotAvailable,
     OrderNotFound,
     RestaurantClosed,
     StaleOrder,
 )
-from domain.order import Order, OrderItem, can_transition
+from domain.order import Order, OrderItem, can_make, can_transition, is_party
+from domain.user_profile import UserProfile
 from repositories.order_repository import OrderRepository
 from repositories.restaurant_repository import RestaurantRepository
 from schemas.order import OrderCreate
@@ -87,14 +89,18 @@ class OrderService:
             raise InternalError()
         return existing
 
-    async def change_status(self, order_id: int, new: OrderStatus, version: int) -> Order:
+    async def change_status(
+        self, order_id: int, new: OrderStatus, version: int, user: UserProfile
+    ) -> Order:
         order = await self._order_repo.get_by_id_any(order_id)
-        if order is None:
-            raise OrderNotFound()
-        if order.version != version:
-            raise StaleOrder()
+        if order is None or not is_party(order, user):
+            raise OrderNotFound()  # 404: don't reveal other people's orders
         if not can_transition(order.status, new):
             raise InvalidStatusTransition(f"Cannot change status from {order.status} to {new}.")
+        if not can_make(order, user, new):
+            raise NotAuthorized()  # 403: a valid step, but not yours
+        if order.version != version:
+            raise StaleOrder()
         updated = await self._order_repo.update_status(order_id, version, order.status, new)
         if updated is None:
             raise StaleOrder()
