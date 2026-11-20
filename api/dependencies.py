@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import verify_access_token
 from core.database import get_db
-from core.exceptions import NotAuthenticated
+from core.enums import UserRole
+from core.exceptions import NotAuthenticated, NotAuthorized
 from domain.user_profile import UserProfile
 from repositories.order_repository import OrderRepository
 from repositories.restaurant_repository import RestaurantRepository
@@ -90,3 +91,15 @@ def get_redis(request: Request) -> Redis:
 
 
 RedisDep = Annotated[Redis, Depends(get_redis)]
+
+
+def require_role(*roles: UserRole):
+    async def dependency(user: CurrentUser) -> UserProfile:
+        if user.role not in roles:
+            raise NotAuthorized()
+        return user
+
+    return dependency
+
+
+RiderUser = Annotated[UserProfile, Depends(require_role(UserRole.RIDER))]

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import create_access_token
 from core.database import AsyncSessionLocal, engine, transaction
-from core.enums import OrderStatus
+from core.enums import OrderStatus, UserRole
 from main import app
 from models.dish import Dish
 from models.order import Order as OrderModel
@@ -63,7 +63,12 @@ def bearer(user_id: int) -> dict[str, str]:
 async def create_users(session: AsyncSession, prefix: str, count: int) -> list[int]:
     """Inserts users directly: hashing a password per user through the API would be slow."""
     users = [
-        User(username=f"{prefix}{i}", email=f"{prefix}{i}@example.com", password_hash="-")
+        User(
+            username=f"{prefix}{i}",
+            email=f"{prefix}{i}@example.com",
+            password_hash="-",
+            role=UserRole.CUSTOMER,
+        )
         for i in range(count)
     ]
     session.add_all(users)

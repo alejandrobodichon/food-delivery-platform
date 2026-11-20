@@ -3,14 +3,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db_errors import translate_db_errors
+from core.enums import UserRole
 from core.exceptions import UserAlreadyExists
 from core.timing import timed
 from domain.user_profile import UserCredentials, UserProfile
 from models.user import User
 
+UNIQUE_USER_CONSTRAINTS = {"users_username_key", "users_email_key"}
+
 
 def _to_profile(user: User) -> UserProfile:
-    return UserProfile(id=user.id, username=user.username, email=user.email)
+    return UserProfile(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        restaurant_id=user.restaurant_id,
+    )
+
+
+def _violated_constraint(error: IntegrityError) -> str | None:
+    """Name of the constraint Postgres reported, if any."""
+    diag = getattr(error.orig, "diag", None)
+    return getattr(diag, "constraint_name", None)
 
 
 class UserRepository:
@@ -50,7 +65,12 @@ class UserRepository:
     @timed
     @translate_db_errors
     async def create(self, username: str, email: str, password_hash: str) -> UserProfile:
-        user = User(username=username, email=email, password_hash=password_hash)
+        user = User(
+            username=username,
+            email=email,
+            password_hash=password_hash,
+            role=UserRole.CUSTOMER,
+        )
         return await self._save(user)
 
     @timed
@@ -74,6 +94,8 @@ class UserRepository:
             await self._session.commit()
         except IntegrityError as e:
             await self._session.rollback()
-            raise UserAlreadyExists() from e
+            if _violated_constraint(e) in UNIQUE_USER_CONSTRAINTS:
+                raise UserAlreadyExists() from e
+            raise
         await self._session.refresh(user)
         return _to_profile(user)
