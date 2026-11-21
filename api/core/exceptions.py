@@ -100,3 +100,7 @@ class DishSoldOut(ConflictError):
 
 class StaleOrder(ConflictError):
     message = "Order was modified by someone else; reload it and try again."
+
+
+class InvalidRefreshToken(UnauthorizedError):
+    message = "Refresh token is invalid or expired."

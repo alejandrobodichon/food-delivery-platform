@@ -11,6 +11,7 @@ from core.enums import UserRole
 from core.exceptions import NotAuthenticated, NotAuthorized
 from domain.user_profile import UserProfile
 from repositories.order_repository import OrderRepository
+from repositories.refresh_token_repository import RefreshTokenRepository
 from repositories.restaurant_repository import RestaurantRepository
 from repositories.user_repository import UserRepository
 from services.auth_service import AuthService
@@ -61,10 +62,17 @@ def get_order_service(
 OrderServiceDep = Annotated[OrderService, Depends(get_order_service)]
 
 
+def get_refresh_token_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> RefreshTokenRepository:
+    return RefreshTokenRepository(db)
+
+
 def get_auth_service(
     repo: Annotated[UserRepository, Depends(get_user_repository)],
+    tokens: Annotated[RefreshTokenRepository, Depends(get_refresh_token_repository)],
 ) -> AuthService:
-    return AuthService(repo)
+    return AuthService(repo, tokens)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]

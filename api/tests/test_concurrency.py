@@ -21,6 +21,7 @@ from core.enums import OrderStatus, UserRole
 from main import app
 from models.dish import Dish
 from models.order import Order as OrderModel
+from models.refresh_token import RefreshToken
 from models.restaurant import Restaurant
 from models.user import User
 from scripts.seed import seed
@@ -41,7 +42,7 @@ async def committed_db(setup_database) -> AsyncGenerator[None]:
         async with transaction(AsyncSessionLocal) as session:
             await session.execute(
                 text(
-                    "TRUNCATE order_items, orders, dishes, restaurants, users "
+                    "TRUNCATE refresh_tokens, order_items, orders, dishes, restaurants, users "
                     "RESTART IDENTITY CASCADE"
                 )
             )
@@ -263,3 +264,71 @@ async def test_ordering_more_units_than_left_returns_409(real_client: AsyncClien
 
     assert response.status_code == 409
     assert await stock_and_orders(race) == (2, 0)
+
+
+# --- the same refresh token used twice at once -----------------------------------------------
+
+REFRESHES = 20
+
+
+async def login_once(client: AsyncClient) -> dict:
+    """Registers and logs in through the API: a real password hash, committed for real."""
+    registered = await client.post(
+        "/v1/users",
+        json={"username": "racer", "email": "racer@example.com", "password": "testpassword123"},
+    )
+    assert registered.status_code == 201, registered.text
+    response = await client.post(
+        "/v1/auth/token", data={"username": "racer", "password": "testpassword123"}
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def refresh_with(client: AsyncClient, refresh_token: str):
+    return client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
+
+
+@pytest.mark.anyio
+async def test_only_one_of_many_concurrent_refreshes_wins(real_client: AsyncClient):
+    """All of them may read the token as unused; only the atomic UPDATE picks one winner."""
+    tokens = await login_once(real_client)
+
+    responses = await asyncio.gather(
+        *(refresh_with(real_client, tokens["refresh_token"]) for _ in range(REFRESHES))
+    )
+
+    codes = [response.status_code for response in responses]
+    assert codes.count(200) == 1, codes
+    assert codes.count(401) == REFRESHES - 1, codes
+
+
+@pytest.mark.anyio
+async def test_concurrent_reuse_revokes_the_winners_token_too(real_client: AsyncClient):
+    """The losers see a reuse, so the token the winner just got is revoked as well."""
+    tokens = await login_once(real_client)
+
+    responses = await asyncio.gather(
+        *(refresh_with(real_client, tokens["refresh_token"]) for _ in range(REFRESHES))
+    )
+
+    [winner] = [response.json() for response in responses if response.status_code == 200]
+    assert (await refresh_with(real_client, winner["refresh_token"])).status_code == 401
+
+
+@pytest.mark.anyio
+async def test_family_revocation_survives_the_401(real_client: AsyncClient):
+    """get_db rolls back when a request fails. The reuse branch commits before raising, or the
+    revocation would be undone together with the request and the thief would stay logged in."""
+    first = await login_once(real_client)
+    second = (await refresh_with(real_client, first["refresh_token"])).json()
+
+    reused = await refresh_with(real_client, first["refresh_token"])
+
+    assert reused.status_code == 401
+    async with AsyncSessionLocal() as session:
+        alive = await session.scalar(
+            select(func.count()).select_from(RefreshToken).where(RefreshToken.revoked_at.is_(None))
+        )
+    assert alive == 0
+    assert (await refresh_with(real_client, second["refresh_token"])).status_code == 401
