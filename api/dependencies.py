@@ -6,9 +6,10 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import verify_access_token
+from core.config import settings
 from core.database import get_db
 from core.enums import UserRole
-from core.exceptions import NotAuthenticated, NotAuthorized
+from core.exceptions import InvalidOrigin, NotAuthenticated, NotAuthorized
 from domain.user_profile import UserProfile
 from repositories.order_repository import OrderRepository
 from repositories.refresh_token_repository import RefreshTokenRepository
@@ -113,3 +114,10 @@ def require_role(*roles: UserRole):
 RiderUser = Annotated[UserProfile, Depends(require_role(UserRole.RIDER))]
 
 CustomerUser = Annotated[UserProfile, Depends(require_role(UserRole.CUSTOMER))]
+
+
+def verify_origin(request: Request) -> None:
+    """CSRF guard for endpoints that read the refresh cookie: browsers always send Origin on
+    cross-site POSTs and pages can't fake it."""
+    if request.headers.get("origin") != settings.frontend_origin:
+        raise InvalidOrigin()

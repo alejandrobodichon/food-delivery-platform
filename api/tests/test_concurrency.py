@@ -16,6 +16,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.database import AsyncSessionLocal, engine, transaction
 from core.enums import OrderStatus, UserRole
 from main import app
@@ -26,6 +27,7 @@ from models.restaurant import Restaurant
 from models.user import User
 from scripts.seed import seed
 from tests.conftest import bearer
+from tests.test_refresh_tokens import tokens_of
 
 RESTAURANT = "Burger Palace"
 DISH = "Classic Burger"
@@ -271,7 +273,7 @@ async def test_ordering_more_units_than_left_returns_409(real_client: AsyncClien
 REFRESHES = 20
 
 
-async def login_once(client: AsyncClient) -> dict:
+async def login_once(client: AsyncClient) -> dict[str, str]:
     """Registers and logs in through the API: a real password hash, committed for real."""
     registered = await client.post(
         "/v1/users",
@@ -281,12 +283,16 @@ async def login_once(client: AsyncClient) -> dict:
     response = await client.post(
         "/v1/auth/token", data={"username": "racer", "password": "testpassword123"}
     )
-    assert response.status_code == 200, response.text
-    return response.json()
+    return tokens_of(response)
 
 
 def refresh_with(client: AsyncClient, refresh_token: str):
-    return client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
+    """An explicit Cookie header wins over the client's cookie jar, so each request sends exactly
+    this token even while other responses are setting new ones."""
+    return client.post(
+        "/v1/auth/refresh",
+        headers={"Origin": settings.frontend_origin, "Cookie": f"refresh_token={refresh_token}"},
+    )
 
 
 @pytest.mark.anyio
@@ -312,7 +318,7 @@ async def test_concurrent_reuse_revokes_the_winners_token_too(real_client: Async
         *(refresh_with(real_client, tokens["refresh_token"]) for _ in range(REFRESHES))
     )
 
-    [winner] = [response.json() for response in responses if response.status_code == 200]
+    [winner] = [tokens_of(response) for response in responses if response.status_code == 200]
     assert (await refresh_with(real_client, winner["refresh_token"])).status_code == 401
 
 
@@ -321,7 +327,7 @@ async def test_family_revocation_survives_the_401(real_client: AsyncClient):
     """get_db rolls back when a request fails. The reuse branch commits before raising, or the
     revocation would be undone together with the request and the thief would stay logged in."""
     first = await login_once(real_client)
-    second = (await refresh_with(real_client, first["refresh_token"])).json()
+    second = tokens_of(await refresh_with(real_client, first["refresh_token"]))
 
     reused = await refresh_with(real_client, first["refresh_token"])
 

@@ -8,6 +8,8 @@ os.environ.setdefault(
     "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost/test_delivery"
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key-at-least-32-bytes-long")
+# The test client talks plain http://, and a Secure cookie is never sent over http.
+os.environ.setdefault("COOKIE_SECURE", "false")
 
 _db_name = make_url(os.environ["DATABASE_URL"]).database or ""
 if not _db_name.startswith("test_"):  # NEW

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     reset_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
     redis_url: str = "redis://localhost:6379/0"
+    frontend_origin: str = "http://localhost:5173"
+    cookie_secure: bool = True
 
 
 settings = Settings.model_validate({})

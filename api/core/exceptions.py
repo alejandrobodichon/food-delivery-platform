@@ -104,3 +104,7 @@ class StaleOrder(ConflictError):
 
 class InvalidRefreshToken(UnauthorizedError):
     message = "Refresh token is invalid or expired."
+
+
+class InvalidOrigin(ForbiddenError):
+    message = "Request origin not allowed."
