@@ -41,9 +41,22 @@ support agent) and documents the decisions behind it.
 - [x] Status changes with optimistic locking (`version`): a stale edit returns `409`.
 - [x] The three concurrency strategies compared below.
 
+**Phase 3: auth and web security**
+
+- [x] Roles (customer, restaurant, rider) with `require_role`, and a table that says which role
+      may make each status change.
+- [x] Ownership checks: another user's order is a `404`, never a `403`.
+- [x] Short-lived JWT access token (15 minutes) and an opaque refresh token (30 days), stored
+      hashed, rotated on every use and revocable.
+- [x] Refresh token reuse detection: a token used twice revokes its whole login, even when both
+      uses arrive at the same time.
+- [x] Logout and "log out everywhere".
+- [x] Refresh token in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie, with an `Origin` check
+      against CSRF.
+- [x] CORS restricted to the frontend's origin.
+
 **Next phases**
 
-- [ ] Auth and web security: refresh tokens, cookies, CSRF, roles, ownership checks.
 - [ ] Deploy.
 - [ ] Payments and webhooks, background jobs, performance and caching, a React frontend, an AI
       support agent, security scanning, and load testing.
@@ -76,6 +89,10 @@ Create a `.env` file in the project root with a secret key:
 ```bash
 echo "SECRET_KEY=$(openssl rand -hex 32)" > .env
 ```
+
+Two optional settings control the browser side: `FRONTEND_ORIGIN` (default
+`http://localhost:5173`) is the only origin allowed by CORS and by the CSRF check, and
+`COOKIE_SECURE` (default `true`) marks the refresh cookie as HTTPS-only.
 
 Start everything (Postgres, Redis, migrations and the API):
 
@@ -129,18 +146,21 @@ All endpoints live under `/v1`, except `/health`.
 | `GET` | `/v1/restaurants` | List restaurants, including closed ones |
 | `GET` | `/v1/restaurants/{id}` | One restaurant; `404` if it doesn't exist |
 | `GET` | `/v1/restaurants/{id}/dishes` | A restaurant's menu; `404` if the restaurant doesn't exist |
-| `POST` | `/v1/users` | Register |
-| `POST` | `/v1/auth/token` | Log in, returns a JWT |
+| `POST` | `/v1/users` | Register; every new user is a customer |
+| `POST` | `/v1/auth/token` | Log in: the access token in the body, the refresh token in an `HttpOnly` cookie |
+| `POST` | `/v1/auth/refresh` | Trade the refresh cookie for a new access token and a new cookie; `401` if it's invalid, expired or reused |
+| `POST` | `/v1/auth/logout` | End this login and clear the cookie |
+| `POST` | `/v1/auth/logout-all` | End every login of the current user |
 | `GET` | `/v1/users/me` | Current user |
 | `GET` | `/v1/users`, `/v1/users/{id}` | Public user profiles |
 | `PATCH` / `DELETE` | `/v1/users/{id}` | Update or delete your own user; `403` for anyone else's, whether the id exists or not |
-| `POST` | `/v1/orders` | Place an order; requires `Idempotency-Key`. `409` if the restaurant is closed or a dish is unavailable or sold out |
+| `POST` | `/v1/orders` | Customers place an order; requires `Idempotency-Key`. `409` if the restaurant is closed or a dish is unavailable or sold out |
 | `GET` | `/v1/orders/{id}` | One of your orders; `404` for anyone else's |
-| `PATCH` | `/v1/orders/{id}` | Change the status, sending the `version` you last saw; `409` if it changed since or the transition isn't allowed |
-| `POST` | `/v1/orders/{id}/accept` | A rider takes the order; `409` if another rider already took it |
+| `PATCH` | `/v1/orders/{id}` | Change the status, sending the `version` you last saw. `404` if the order isn't yours, `403` if this step belongs to another role, `409` if it changed since or the transition isn't allowed |
+| `POST` | `/v1/orders/{id}/accept` | Riders take an order that is paid or being prepared; `409` if another rider already took it |
 
-Who may change an order's status or accept it is not restricted yet: any logged-in user can.
-Roles (customer, restaurant, rider) come with phase 3.
+`/v1/auth/refresh` and `/v1/auth/logout` read the refresh cookie, so they only accept requests
+whose `Origin` is the frontend's (`403` otherwise).
 
 ## Architecture
 
@@ -328,6 +348,142 @@ Work that needs one is split into short transactions: reserve with an intermedia
 example `pending_payment`), call the API outside any transaction with an idempotency key, then
 confirm or compensate in a second transaction. Phase 4 (payments) builds this.
 
+### Roles and who may change an order
+
+Every user has one role: `customer`, `restaurant` (staff of one restaurant) or `rider`.
+Registration always creates a customer: the role never comes from the request body, or anyone
+could sign up as staff. A `CHECK` constraint keeps the role and the restaurant consistent in both
+directions: restaurant staff must have a restaurant, and nobody else may have one.
+
+Endpoints that belong to one role say so in their signature (`CustomerUser`, `RiderUser`, built by
+`require_role`). Status changes go through a single `PATCH` used by every role, so the rule lives
+in a table in `domain/order.py`, next to the state machine:
+
+| Change | Who |
+| --- | --- |
+| `pending → cancelled` | the customer who placed the order |
+| `paid → preparing`, `paid → cancelled` | the restaurant of the order |
+| `preparing → on_the_way`, `on_the_way → delivered` | the rider who accepted it |
+| `pending → paid` | nobody through the API: the payment provider will confirm it (phase 4) |
+
+The checks run in a fixed order, and each one protects something:
+
+1. **Is the order yours?** If not, `404`. A `403` would confirm that the order exists, and anyone
+   could enumerate ids (IDOR). "Yours" depends on the role: your purchase, your restaurant's
+   order, or the delivery you accepted.
+2. **Does the state machine allow the change?** If not, `409`, whoever asks.
+3. **Is this step yours?** If not, `403`. You already know the order exists, so it reveals nothing.
+4. **Is your version current?** If not, `409`. There's no point telling someone without
+   permission to reload.
+
+A test walks all 108 combinations of status, status and role against its own copy of the table,
+so a permission added by mistake fails CI.
+
+### Two tokens: a short access token and a revocable refresh token
+
+| | Access token | Refresh token |
+| --- | --- | --- |
+| Format | JWT | Opaque random string |
+| Lifetime | 15 minutes | 30 days |
+| Travels in | the `Authorization` header | an `HttpOnly` cookie, only to `/v1/auth` |
+| Checked by | its signature, without the database | a database lookup |
+| Revocable | no, it just expires | yes |
+
+A JWT can't be revoked: the server doesn't look it up, so a stolen one works until it expires. A
+long-lived JWT would keep users logged in but make theft worse. Splitting the job gives both: the
+access token is fast and expires quickly, and the refresh token is the one that controls the
+session.
+
+- **The refresh token is opaque, not a JWT.** It's only a key to a database row, and it's used
+  once every 15 minutes, so the lookup is cheap. In exchange, it can be revoked.
+- **It's stored as a SHA-256 hash.** A leaked database gives out nothing usable. A slow hash like
+  bcrypt adds nothing here, because a 256-bit random token can't be guessed, and its random salt
+  would make it impossible to find the row by hash.
+- **It rotates.** Every refresh revokes the token it used and issues a new one, so each token
+  works once.
+- **Reuse revokes the whole login.** Every login starts a *family*, and rotated tokens inherit
+  it. A used token coming back means someone has a copy, and there's no way to tell the owner from
+  the thief, so every token of that family is revoked. Other logins of the same user keep working.
+  Used tokens are marked `revoked_at` instead of deleted, because reuse can only be detected if
+  the server remembers the token existed.
+- **Two refreshes with the same token at the same time are a reuse too.** Both requests may read
+  the token as unused, so the revocation is an atomic conditional update, the same pattern as a
+  rider accepting an order: `UPDATE ... SET revoked_at = now() WHERE id = :id AND revoked_at IS
+  NULL RETURNING id`. Only one request gets the row back. A test fires 20 concurrent refreshes and
+  exactly one wins.
+- **The revocation is committed before the `401`.** `get_db` rolls back when a request fails, and
+  the `401` would undo the revocation together with it, leaving the thief logged in. A security
+  write has to survive the error response. A test proves it against the real `get_db`.
+- **Logout revokes the family**, so it ends the session even with an older token of it.
+  "Log out everywhere" revokes every token of the user.
+- **The trade-off:** after a logout, an access token already issued keeps working until it expires,
+  15 minutes at most. Cutting it instantly would need a blocklist checked on every request.
+
+### Where the tokens live: cookie vs localStorage
+
+Anything in `localStorage` can be read by any script on the page, so a single XSS (a compromised
+dependency, an unescaped field) can steal a 30-day session. The refresh token lives in an
+`HttpOnly` cookie that no script can read, and the access token lives only in the frontend's
+memory, where a stolen copy is worth 15 minutes.
+
+The access token deliberately stays out of cookies. Sent in the `Authorization` header, it can't be
+attached by another site, so the API's regular endpoints don't need CSRF protection at all. After a
+page reload the frontend gets a new one from `/v1/auth/refresh`.
+
+The cookie is `HttpOnly` (no script can read it), `Secure` (HTTPS only), `SameSite=Strict` (never
+sent on a request started by another site) and scoped to `Path=/v1/auth` (not sent on every API
+call). `set_cookie` and `delete_cookie` go through one helper each, because a cookie deleted with
+a different path is a different cookie, and logout would silently leave it in place.
+
+### CSRF: the cookie endpoints check `Origin`
+
+Browsers attach cookies by themselves, whichever page starts the request. Another site can't read
+the response, but it can still cause the effect: log the user out, or rotate their token so the
+next legitimate refresh looks like a reuse. Two layers stop it:
+
+1. `SameSite=Strict`, so the browser doesn't send the cookie on cross-site requests.
+2. An `Origin` check on `/v1/auth/refresh` and `/v1/auth/logout`, the only endpoints that read the
+   cookie. Browsers set `Origin` themselves and pages can't forge it, so anything other than the
+   frontend's origin, or no `Origin` at all, gets a `403` before the token is touched. This also
+   covers older browsers that ignore `SameSite`.
+
+The check isn't applied where it adds nothing. `/v1/auth/logout-all` is authenticated by the
+`Authorization` header, which another site can't add, so there's no CSRF without a cookie. Login
+has no cookie to abuse, and checking `Origin` there would break the Swagger UI in `/docs`.
+
+### CORS: the frontend is the only origin allowed to read responses
+
+Browsers don't let a page read responses from another origin (the same-origin policy). The
+frontend runs on a different origin than the API (another port locally, `app.` and `api.` in
+production), so CORS opens one exception: `CORSMiddleware` allows exactly `FRONTEND_ORIGIN`, with
+credentials, and exposes the `Location` and `X-Request-ID` headers to scripts.
+
+- **Never `*` with credentials.** Browsers reject `*` on requests with cookies, so Starlette
+  answers those by echoing back whatever `Origin` arrives, which would let any site read responses
+  made with the user's cookies. A test fails if another origin ever gets the header.
+- **CORS and CSRF use the same setting.** The `Origin` check stops other sites from *doing* things
+  with the cookie; CORS decides who can *read* the responses. Defining the trusted origin once keeps
+  them from disagreeing.
+
+**Reproducing a CORS error.** A one-button page that calls `GET /v1/restaurants`, served on two
+ports:
+
+- From `http://localhost:5173`, the allowed origin, it shows the restaurants.
+- From `http://localhost:5500` it fails with `TypeError: Failed to fetch`, and the console says
+  *"blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present"*. But the Network
+  tab shows `200 OK`, and the server logs an ordinary `GET /v1/restaurants -> 200`.
+
+The API answered; the browser received the response and refused to hand it to the page because the
+header was missing. That's how a CORS error can come with a `200`, and why CORS doesn't protect an
+API from attackers: it runs in the browser, `curl` ignores it, and the request is executed anyway.
+What protects the API is authentication, `GET`s that never change anything, and CSRF checks where
+cookies are involved.
+
+One more trap showed up while reproducing it: an unhandled exception returns a `500` from the
+outermost layer of the app, outside the CORS middleware, so it carries no CORS headers and the
+browser reports it as a CORS error. When the console says CORS, check the server logs before the
+CORS settings. Errors mapped by our exception handlers (`404`, `409`, ...) do carry the headers.
+
 ### The API is versioned in the URL
 
 Every endpoint is under `/v1`. Mobile apps can't be force-updated, so old app versions keep calling
@@ -365,6 +521,17 @@ of the code to prove they catch the race: 8 to 12 riders won the same order, and
 were created for 3 units. The race over a single unit is so narrow that the naive version sometimes
 gets lucky, which is why the 3-unit test exists alongside the 1-unit one.
 
+Some bugs only exist under concurrency. While building refresh tokens, `revoke` once used
+`execute()` instead of `scalar()`: `execute()` never returns `None`, so every request believed it
+had won. Every sequential test passed, because a token used twice in a row is caught earlier by its
+`revoked_at`. Only the test with 20 simultaneous refreshes failed, with 3 winners.
+
+Security rules are tested from both sides: the rule must allow what it should and reject what it
+shouldn't. Where it matters, the test restates the rule instead of importing it (the role table,
+the SHA-256 of the token), so the code isn't checked against itself. Each protection was also
+removed on purpose to confirm a test fails: dropping the `Origin` check fails 4 tests, dropping
+`HttpOnly` fails 1, and allowing `*` in CORS fails 2.
+
 ### Deployment-ready containers
 
 - Migrations run in a dedicated `migrate` service. The API only starts after it finishes
@@ -389,6 +556,15 @@ gets lucky, which is why the 3-unit test exists alongside the 1-unit one.
   passes the tests.
 - Send the order version as HTTP `ETag` / `If-Match` headers (`412 Precondition Failed`), the
   standard form of optimistic locking, instead of a field in the body.
+- Accept a just-rotated refresh token for a few seconds (a grace period). Today two tabs that
+  refresh at the same moment, or a retry after a lost response, look like a reuse and log the user
+  out. The frontend can also avoid it by running a single refresh at a time.
+- Delete expired refresh tokens with a periodic job. Logging in again without logging out leaves
+  the previous family valid until it expires, even though no browser holds it.
+- Store the user agent, IP and last use of each login, to list active sessions and end one of
+  them.
+- Log out everywhere automatically when the password changes.
+- Create the restaurant staff and rider users in the seed. Registration only creates customers.
 
 ## Author
 

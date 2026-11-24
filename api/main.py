@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,3 +101,14 @@ async def correlation_id(request: Request, call_next):
         return response
     finally:
         request_id_var.reset(token)
+
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[settings.frontend_origin],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
+    expose_headers=["Location", "X-Request-ID"],
+)
