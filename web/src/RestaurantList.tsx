@@ -1,35 +1,40 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { fetchJson } from "./api/client";
 import type { components } from "./api/schema";
 
 type Restaurant = components["schemas"]["RestaurantResponse"];
 
 export function RestaurantList() {
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isPending, error } = useQuery({
+    queryKey: ["restaurants"],
+    queryFn: ({ signal }) => fetchJson<Restaurant[]>("/v1/restaurants", signal),
+  });
+  const [onlyOpen, setOnlyOpen] = useState(false);
 
-  useEffect(() => {
-    fetch("/v1/restaurants")
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json() as Promise<Restaurant[]>;
-      })
-      .then(setRestaurants)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Unknown error"))
-      .finally(() => setLoading(false));
-  }, []);
+  if (isPending) return <p>Loading…</p>;
+  if (error) return <p>Could not load restaurants: {error.message}</p>;
+  if (data.length === 0) return <p>No restaurants yet.</p>;
 
-  if (loading) return <p>Loading…</p>;
-  if (error) return <p>Could not load restaurants: {error}</p>;
-  if (restaurants.length === 0) return <p>No restaurants yet.</p>;
+  const visible = onlyOpen ? data.filter((r) => r.is_open) : data;
 
   return (
-    <ul>
-      {restaurants.map((restaurant) => (
-        <li key={restaurant.id}>
-          {restaurant.name} {restaurant.is_open ? "🟢" : "🔴 closed"}
-        </li>
-      ))}
-    </ul>
+    <div>
+      <label>
+        <input
+          type="checkbox"
+          checked={onlyOpen}
+          onChange={(event) => setOnlyOpen(event.target.checked)}
+        />
+        Only open restaurants
+      </label>
+      <ul>
+        {visible.map((restaurant) => (
+          <li key={restaurant.id}>
+            {restaurant.name} {restaurant.is_open ? "🟢" : "🔴 closed"}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
