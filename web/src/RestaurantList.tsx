@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { fetchJson } from "./api/client";
 import type { components } from "./api/schema";
 
@@ -11,6 +11,12 @@ export function RestaurantList() {
     queryFn: ({ signal }) => fetchJson<Restaurant[]>("/v1/restaurants", signal),
   });
   const [onlyOpen, setOnlyOpen] = useState(false);
+
+  const openCount = data?.filter((r) => r.is_open).length ?? 0;
+  
+  useEffect(() => {
+    document.title = `${openCount} restaurants open`;
+  }, [openCount]);
 
   if (isPending) return <p>Loading…</p>;
   if (error) return <p>Could not load restaurants: {error.message}</p>;
