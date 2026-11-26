@@ -103,7 +103,6 @@ async def correlation_id(request: Request, call_next):
         request_id_var.reset(token)
 
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],
